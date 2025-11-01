@@ -11,6 +11,7 @@ import { colorizeCode, colorizeLine } from '../../utils/CodeColorizer.js';
 import { MaxSizedBox } from '../shared/MaxSizedBox.js';
 import { theme as semanticTheme } from '../../semantic-colors.js';
 import type { Theme } from '../../themes/theme.js';
+import { useSettings } from '../../contexts/SettingsContext.js';
 
 interface DiffLine {
   type: 'add' | 'del' | 'context' | 'hunk' | 'other';
@@ -98,6 +99,8 @@ export const DiffRenderer: React.FC<DiffRendererProps> = ({
   terminalWidth,
   theme,
 }) => {
+  const settings = useSettings();
+
   const screenReaderEnabled = useIsScreenReaderEnabled();
   if (!diffContent || typeof diffContent !== 'string') {
     return <Text color={semanticTheme.status.warning}>No diff content.</Text>;
@@ -151,13 +154,14 @@ export const DiffRenderer: React.FC<DiffRendererProps> = ({
     const language = fileExtension
       ? getLanguageFromExtension(fileExtension)
       : null;
-    renderedOutput = colorizeCode(
-      addedContent,
+    renderedOutput = colorizeCode({
+      code: addedContent,
       language,
-      availableTerminalHeight,
-      terminalWidth,
+      availableHeight: availableTerminalHeight,
+      maxWidth: terminalWidth,
       theme,
-    );
+      settings,
+    });
   } else {
     renderedOutput = renderDiffContent(
       parsedLines,
@@ -165,6 +169,7 @@ export const DiffRenderer: React.FC<DiffRendererProps> = ({
       tabWidth,
       availableTerminalHeight,
       terminalWidth,
+      settings?.merged.ui?.useAlternateBuffer !== true,
     );
   }
 
@@ -177,6 +182,7 @@ const renderDiffContent = (
   tabWidth = DEFAULT_TAB_WIDTH,
   availableTerminalHeight: number | undefined,
   terminalWidth: number,
+  useMaxSizedBox: boolean,
 ) => {
   // 1. Normalize whitespace (replace tabs with spaces) *before* further processing
   const normalizedLines = parsedLines.map((line) => ({
@@ -235,115 +241,127 @@ const renderDiffContent = (
   let lastLineNumber: number | null = null;
   const MAX_CONTEXT_LINES_WITHOUT_GAP = 5;
 
-  return (
-    <MaxSizedBox
-      maxHeight={availableTerminalHeight}
-      maxWidth={terminalWidth}
-      key={key}
-    >
-      {displayableLines.reduce<React.ReactNode[]>((acc, line, index) => {
-        // Determine the relevant line number for gap calculation based on type
-        let relevantLineNumberForGapCalc: number | null = null;
-        if (line.type === 'add' || line.type === 'context') {
-          relevantLineNumberForGapCalc = line.newLine ?? null;
-        } else if (line.type === 'del') {
-          // For deletions, the gap is typically in relation to the original file's line numbering
-          relevantLineNumberForGapCalc = line.oldLine ?? null;
-        }
+  const content = displayableLines.reduce<React.ReactNode[]>(
+    (acc, line, index) => {
+      // Determine the relevant line number for gap calculation based on type
+      let relevantLineNumberForGapCalc: number | null = null;
+      if (line.type === 'add' || line.type === 'context') {
+        relevantLineNumberForGapCalc = line.newLine ?? null;
+      } else if (line.type === 'del') {
+        // For deletions, the gap is typically in relation to the original file's line numbering
+        relevantLineNumberForGapCalc = line.oldLine ?? null;
+      }
 
-        if (
-          lastLineNumber !== null &&
-          relevantLineNumberForGapCalc !== null &&
-          relevantLineNumberForGapCalc >
-            lastLineNumber + MAX_CONTEXT_LINES_WITHOUT_GAP + 1
-        ) {
-          acc.push(
-            <Box key={`gap-${index}`}>
-              <Text wrap="truncate" color={semanticTheme.text.secondary}>
-                {'═'.repeat(terminalWidth)}
-              </Text>
-            </Box>,
-          );
-        }
-
-        const lineKey = `diff-line-${index}`;
-        let gutterNumStr = '';
-        let prefixSymbol = ' ';
-
-        switch (line.type) {
-          case 'add':
-            gutterNumStr = (line.newLine ?? '').toString();
-            prefixSymbol = '+';
-            lastLineNumber = line.newLine ?? null;
-            break;
-          case 'del':
-            gutterNumStr = (line.oldLine ?? '').toString();
-            prefixSymbol = '-';
-            // For deletions, update lastLineNumber based on oldLine if it's advancing.
-            // This helps manage gaps correctly if there are multiple consecutive deletions
-            // or if a deletion is followed by a context line far away in the original file.
-            if (line.oldLine !== undefined) {
-              lastLineNumber = line.oldLine;
-            }
-            break;
-          case 'context':
-            gutterNumStr = (line.newLine ?? '').toString();
-            prefixSymbol = ' ';
-            lastLineNumber = line.newLine ?? null;
-            break;
-          default:
-            return acc;
-        }
-
-        const displayContent = line.content.substring(baseIndentation);
-
+      if (
+        lastLineNumber !== null &&
+        relevantLineNumberForGapCalc !== null &&
+        relevantLineNumberForGapCalc >
+          lastLineNumber + MAX_CONTEXT_LINES_WITHOUT_GAP + 1
+      ) {
         acc.push(
-          <Box key={lineKey} flexDirection="row">
+          <Box key={`gap-${index}`}>
+            {/* XXX switch back to a proper border. */}
+            <Text wrap="truncate" color={semanticTheme.text.secondary}>
+              {'═'.repeat(terminalWidth)}
+            </Text>
+          </Box>,
+        );
+      }
+
+      const lineKey = `diff-line-${index}`;
+      let gutterNumStr = '';
+      let prefixSymbol = ' ';
+
+      switch (line.type) {
+        case 'add':
+          gutterNumStr = (line.newLine ?? '').toString();
+          prefixSymbol = '+';
+          lastLineNumber = line.newLine ?? null;
+          break;
+        case 'del':
+          gutterNumStr = (line.oldLine ?? '').toString();
+          prefixSymbol = '-';
+          // For deletions, update lastLineNumber based on oldLine if it's advancing.
+          // This helps manage gaps correctly if there are multiple consecutive deletions
+          // or if a deletion is followed by a context line far away in the original file.
+          if (line.oldLine !== undefined) {
+            lastLineNumber = line.oldLine;
+          }
+          break;
+        case 'context':
+          gutterNumStr = (line.newLine ?? '').toString();
+          prefixSymbol = ' ';
+          lastLineNumber = line.newLine ?? null;
+          break;
+        default:
+          return acc;
+      }
+
+      const displayContent = line.content.substring(baseIndentation);
+
+      acc.push(
+        <Box key={lineKey} flexDirection="row">
+          <Text
+            color={semanticTheme.text.secondary}
+            backgroundColor={
+              line.type === 'add'
+                ? semanticTheme.background.diff.added
+                : line.type === 'del'
+                  ? semanticTheme.background.diff.removed
+                  : undefined
+            }
+          >
+            {gutterNumStr.padStart(gutterWidth)}{' '}
+          </Text>
+          {line.type === 'context' ? (
+            <>
+              <Text>{prefixSymbol} </Text>
+              <Text wrap="wrap">{colorizeLine(displayContent, language)}</Text>
+            </>
+          ) : (
             <Text
-              color={semanticTheme.text.secondary}
               backgroundColor={
                 line.type === 'add'
                   ? semanticTheme.background.diff.added
-                  : line.type === 'del'
-                    ? semanticTheme.background.diff.removed
-                    : undefined
+                  : semanticTheme.background.diff.removed
               }
+              wrap="wrap"
             >
-              {gutterNumStr.padStart(gutterWidth)}{' '}
-            </Text>
-            {line.type === 'context' ? (
-              <>
-                <Text>{prefixSymbol} </Text>
-                <Text wrap="wrap">
-                  {colorizeLine(displayContent, language)}
-                </Text>
-              </>
-            ) : (
               <Text
-                backgroundColor={
+                color={
                   line.type === 'add'
-                    ? semanticTheme.background.diff.added
-                    : semanticTheme.background.diff.removed
+                    ? semanticTheme.status.success
+                    : semanticTheme.status.error
                 }
-                wrap="wrap"
               >
-                <Text
-                  color={
-                    line.type === 'add'
-                      ? semanticTheme.status.success
-                      : semanticTheme.status.error
-                  }
-                >
-                  {prefixSymbol}
-                </Text>{' '}
-                {colorizeLine(displayContent, language)}
-              </Text>
-            )}
-          </Box>,
-        );
-        return acc;
-      }, [])}
-    </MaxSizedBox>
+                {prefixSymbol}
+              </Text>{' '}
+              {colorizeLine(displayContent, language)}
+            </Text>
+          )}
+        </Box>,
+      );
+      return acc;
+    },
+    [],
+  );
+
+  if (useMaxSizedBox) {
+    return (
+      <MaxSizedBox
+        maxHeight={availableTerminalHeight}
+        maxWidth={terminalWidth}
+        key={key}
+      >
+        {content}
+      </MaxSizedBox>
+    );
+  }
+
+  return (
+    <Box key={key} flexDirection="column" width={terminalWidth}>
+      {content}
+    </Box>
   );
 };
 

@@ -22,6 +22,7 @@ import {
 import { theme } from '../../semantic-colors.js';
 import type { AnsiOutput, Config } from '@google/gemini-cli-core';
 import { useUIState } from '../../contexts/UIStateContext.js';
+import { useSettings } from '../../contexts/SettingsContext.js';
 
 const STATIC_HEIGHT = 1;
 const RESERVED_LINE_COUNT = 5; // for tool name, status, padding etc.
@@ -58,6 +59,8 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
   config,
 }) => {
   const { renderMarkdown } = useUIState();
+  const settings = useSettings();
+  const useAlternateBuffer = settings?.merged.ui?.useAlternateBuffer ?? false;
   const isThisShellFocused =
     (name === SHELL_COMMAND_NAME || name === 'Shell') &&
     status === ToolCallStatus.Executing &&
@@ -108,13 +111,12 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
     : undefined;
 
   // Long tool call response in MarkdownDisplay doesn't respect availableTerminalHeight properly,
-  // we're forcing it to not render as markdown when the response is too long, it will fallback
+  // so if we aren't using alternate buffer mode, we're forcing it to not render as markdown when the response is too long, it will fallback
   // to render as plain text, which is contained within the terminal using MaxSizedBox
-  if (availableHeight) {
+  if (availableHeight && !useAlternateBuffer) {
     renderOutputAsMarkdown = false;
   }
-
-  const childWidth = terminalWidth - 3; // account for padding.
+  const childWidth = terminalWidth - 2;
   if (typeof resultDisplay === 'string') {
     if (resultDisplay.length > MAXIMUM_RESULT_DISPLAY_CHARACTERS) {
       // Truncate the result display to fit within the available width.
@@ -122,9 +124,23 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
         '...' + resultDisplay.slice(-MAXIMUM_RESULT_DISPLAY_CHARACTERS);
     }
   }
+  // The outer box should not actually scroll unless something has gone very wrong.
   return (
-    <Box paddingX={1} paddingY={0} flexDirection="column">
-      <Box minHeight={1}>
+    <Box
+      paddingY={0}
+      flexDirection="column"
+      overflow="scroll"
+      maxHeight={availableTerminalHeight}
+    >
+      <Box
+        minHeight={1}
+        borderStyle="round"
+        borderColor={theme.background.primary}
+        paddingX={1}
+        borderTop={false}
+        borderLeft={false}
+        borderRight={false}
+      >
         <ToolStatusIndicator status={status} name={name} />
         <ToolInfo
           name={name}
@@ -142,26 +158,33 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
         {emphasis === 'high' && <TrailingIndicator />}
       </Box>
       {resultDisplay && (
-        <Box paddingLeft={STATUS_INDICATOR_WIDTH} width="100%" marginTop={1}>
+        <Box width="100%" flexDirection="column" paddingLeft={1}>
           <Box flexDirection="column">
             {typeof resultDisplay === 'string' && renderOutputAsMarkdown ? (
               <Box flexDirection="column">
                 <MarkdownDisplay
                   text={resultDisplay}
-                  isPending={false}
-                  availableTerminalHeight={availableHeight}
                   terminalWidth={childWidth}
                   renderMarkdown={renderMarkdown}
+                  isPending={false}
                 />
               </Box>
             ) : typeof resultDisplay === 'string' && !renderOutputAsMarkdown ? (
-              <MaxSizedBox maxHeight={availableHeight} maxWidth={childWidth}>
-                <Box>
+              useAlternateBuffer ? (
+                <Box flexDirection="column" width={childWidth}>
                   <Text wrap="wrap" color={theme.text.primary}>
                     {resultDisplay}
                   </Text>
                 </Box>
-              </MaxSizedBox>
+              ) : (
+                <MaxSizedBox maxHeight={availableHeight} maxWidth={childWidth}>
+                  <Box>
+                    <Text wrap="wrap" color={theme.text.primary}>
+                      {resultDisplay}
+                    </Text>
+                  </Box>
+                </MaxSizedBox>
+              )
             ) : typeof resultDisplay === 'object' &&
               'fileDiff' in resultDisplay ? (
               <DiffRenderer
@@ -271,10 +294,7 @@ const ToolInfo: React.FC<ToolInfo> = ({
   }, [emphasis]);
   return (
     <Box>
-      <Text
-        wrap="truncate-end"
-        strikethrough={status === ToolCallStatus.Canceled}
-      >
+      <Text strikethrough={status === ToolCallStatus.Canceled}>
         <Text color={nameColor} bold>
           {name}
         </Text>{' '}

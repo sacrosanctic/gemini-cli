@@ -12,13 +12,15 @@ import { useUIState } from '../contexts/UIStateContext.js';
 import { useAppContext } from '../contexts/AppContext.js';
 import { AppHeader } from './AppHeader.js';
 import { useSettings } from '../contexts/SettingsContext.js';
+import { SCROLL_TO_ITEM_END } from './shared/VirtualizedList.js';
+import { ScrollableList } from './shared/ScrollableList.js';
+import { useMemo } from 'react';
+import { MAX_GEMINI_MESSAGE_LINES } from '../constants.js';
 
 // Limit Gemini messages to a very high number of lines to mitigate performance
 // issues in the worst case if we somehow get an enormous response from Gemini.
 // This threshold is arbitrary but should be high enough to never impact normal
 // usage.
-const MAX_GEMINI_MESSAGE_LINES = 65536;
-
 export const MainContent = () => {
   const { version } = useAppContext();
   const uiState = useUIState();
@@ -32,24 +34,21 @@ export const MainContent = () => {
     availableTerminalHeight,
   } = uiState;
 
-  const historyItems = [
-    <AppHeader key="app-header" version={version} />,
-    ...uiState.history.map((h) => (
-      <HistoryItemDisplay
-        terminalWidth={mainAreaWidth}
-        availableTerminalHeight={staticAreaMaxItemHeight}
-        availableTerminalHeightGemini={MAX_GEMINI_MESSAGE_LINES}
-        key={h.id}
-        item={h}
-        isPending={false}
-        commands={uiState.slashCommands}
-      />
-    )),
-  ];
+  const historyItems = uiState.history.map((h) => (
+    <HistoryItemDisplay
+      terminalWidth={mainAreaWidth}
+      availableTerminalHeight={staticAreaMaxItemHeight}
+      availableTerminalHeightGemini={MAX_GEMINI_MESSAGE_LINES}
+      key={h.id}
+      item={h}
+      isPending={false}
+      commands={uiState.slashCommands}
+    />
+  ));
 
   const pendingItems = (
     <OverflowProvider>
-      <Box flexDirection="column" width={mainAreaWidth}>
+      <Box flexDirection="column">
         {pendingHistoryItems.map((item, i) => (
           <HistoryItemDisplay
             key={i}
@@ -69,28 +68,60 @@ export const MainContent = () => {
     </OverflowProvider>
   );
 
+  const virtualizedData = useMemo(
+    () => [
+      { type: 'header' as const },
+      ...uiState.history.map((item) => ({ type: 'history' as const, item })),
+      { type: 'pending' as const },
+    ],
+    [uiState.history],
+  );
+
   if (useAlternateBuffer) {
-    // Placeholder alternate buffer implementation using a scrollable box that
-    // is always scrolled to the bottom. In follow up PRs we will switch this
-    // to a proper alternate buffer implementation.
     return (
-      <Box
-        flexDirection="column"
-        overflowY="scroll"
-        scrollTop={Number.MAX_SAFE_INTEGER}
-        maxHeight={availableTerminalHeight}
-      >
-        <Box flexDirection="column" flexShrink={0}>
-          {historyItems}
-          {pendingItems}
-        </Box>
-      </Box>
+      <ScrollableList
+        hasFocus={!uiState.isEditorDialogOpen}
+        data={virtualizedData}
+        renderItem={({ item }) => {
+          if (item.type === 'header') {
+            return <AppHeader key="app-header" version={version} />;
+          } else if (item.type === 'history') {
+            return (
+              <HistoryItemDisplay
+                terminalWidth={mainAreaWidth}
+                availableTerminalHeight={staticAreaMaxItemHeight}
+                availableTerminalHeightGemini={MAX_GEMINI_MESSAGE_LINES}
+                key={item.item.id}
+                item={item.item}
+                isPending={false}
+                commands={uiState.slashCommands}
+              />
+            );
+          } else {
+            return pendingItems;
+          }
+        }}
+        estimatedItemHeight={() => 100}
+        keyExtractor={(item, _index) => {
+          if (item.type === 'header') return 'header';
+          if (item.type === 'history') return item.item.id.toString();
+          return 'pending';
+        }}
+        initialScrollIndex={SCROLL_TO_ITEM_END}
+        initialScrollOffsetInIndex={SCROLL_TO_ITEM_END}
+      />
     );
   }
 
   return (
     <>
-      <Static key={uiState.historyRemountKey} items={historyItems}>
+      <Static
+        key={uiState.historyRemountKey}
+        items={[
+          <AppHeader key="app-header" version={version} />,
+          ...historyItems,
+        ]}
+      >
         {(item) => item}
       </Static>
       {pendingItems}
