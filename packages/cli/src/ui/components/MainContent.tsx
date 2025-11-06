@@ -14,8 +14,11 @@ import { AppHeader } from './AppHeader.js';
 import { useSettings } from '../contexts/SettingsContext.js';
 import { SCROLL_TO_ITEM_END } from './shared/VirtualizedList.js';
 import { ScrollableList } from './shared/ScrollableList.js';
-import { useMemo } from 'react';
+import { useMemo, memo, useCallback } from 'react';
 import { MAX_GEMINI_MESSAGE_LINES } from '../constants.js';
+
+const MemoizedHistoryItemDisplay = memo(HistoryItemDisplay);
+const MemoizedAppHeader = memo(AppHeader);
 
 // Limit Gemini messages to a very high number of lines to mitigate performance
 // issues in the worst case if we somehow get an enormous response from Gemini.
@@ -46,26 +49,37 @@ export const MainContent = () => {
     />
   ));
 
-  const pendingItems = (
-    <OverflowProvider>
-      <Box flexDirection="column">
-        {pendingHistoryItems.map((item, i) => (
-          <HistoryItemDisplay
-            key={i}
-            availableTerminalHeight={
-              uiState.constrainHeight ? availableTerminalHeight : undefined
-            }
-            terminalWidth={mainAreaWidth}
-            item={{ ...item, id: 0 }}
-            isPending={true}
-            isFocused={!uiState.isEditorDialogOpen}
-            activeShellPtyId={uiState.activePtyId}
-            embeddedShellFocused={uiState.embeddedShellFocused}
-          />
-        ))}
-        <ShowMoreLines constrainHeight={uiState.constrainHeight} />
-      </Box>
-    </OverflowProvider>
+  const pendingItems = useMemo(
+    () => (
+      <OverflowProvider>
+        <Box flexDirection="column">
+          {pendingHistoryItems.map((item, i) => (
+            <HistoryItemDisplay
+              key={i}
+              availableTerminalHeight={
+                uiState.constrainHeight ? availableTerminalHeight : undefined
+              }
+              terminalWidth={mainAreaWidth}
+              item={{ ...item, id: 0 }}
+              isPending={true}
+              isFocused={!uiState.isEditorDialogOpen}
+              activeShellPtyId={uiState.activePtyId}
+              embeddedShellFocused={uiState.embeddedShellFocused}
+            />
+          ))}
+          <ShowMoreLines constrainHeight={uiState.constrainHeight} />
+        </Box>
+      </OverflowProvider>
+    ),
+    [
+      pendingHistoryItems,
+      uiState.constrainHeight,
+      availableTerminalHeight,
+      mainAreaWidth,
+      uiState.isEditorDialogOpen,
+      uiState.activePtyId,
+      uiState.embeddedShellFocused,
+    ],
   );
 
   const virtualizedData = useMemo(
@@ -77,30 +91,41 @@ export const MainContent = () => {
     [uiState.history],
   );
 
+  const renderItem = useCallback(
+    ({ item }: { item: (typeof virtualizedData)[number] }) => {
+      if (item.type === 'header') {
+        return <MemoizedAppHeader key="app-header" version={version} />;
+      } else if (item.type === 'history') {
+        return (
+          <MemoizedHistoryItemDisplay
+            terminalWidth={mainAreaWidth}
+            availableTerminalHeight={staticAreaMaxItemHeight}
+            availableTerminalHeightGemini={MAX_GEMINI_MESSAGE_LINES}
+            key={item.item.id}
+            item={item.item}
+            isPending={false}
+            commands={uiState.slashCommands}
+          />
+        );
+      } else {
+        return pendingItems;
+      }
+    },
+    [
+      version,
+      mainAreaWidth,
+      staticAreaMaxItemHeight,
+      uiState.slashCommands,
+      pendingItems,
+    ],
+  );
+
   if (useAlternateBuffer) {
     return (
       <ScrollableList
         hasFocus={!uiState.isEditorDialogOpen}
         data={virtualizedData}
-        renderItem={({ item }) => {
-          if (item.type === 'header') {
-            return <AppHeader key="app-header" version={version} />;
-          } else if (item.type === 'history') {
-            return (
-              <HistoryItemDisplay
-                terminalWidth={mainAreaWidth}
-                availableTerminalHeight={staticAreaMaxItemHeight}
-                availableTerminalHeightGemini={MAX_GEMINI_MESSAGE_LINES}
-                key={item.item.id}
-                item={item.item}
-                isPending={false}
-                commands={uiState.slashCommands}
-              />
-            );
-          } else {
-            return pendingItems;
-          }
-        }}
+        renderItem={renderItem}
         estimatedItemHeight={() => 100}
         keyExtractor={(item, _index) => {
           if (item.type === 'header') return 'header';

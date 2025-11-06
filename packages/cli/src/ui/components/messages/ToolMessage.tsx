@@ -117,13 +117,80 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
     renderOutputAsMarkdown = false;
   }
   const childWidth = terminalWidth - 2;
-  if (typeof resultDisplay === 'string') {
-    if (resultDisplay.length > MAXIMUM_RESULT_DISPLAY_CHARACTERS) {
-      // Truncate the result display to fit within the available width.
-      resultDisplay =
-        '...' + resultDisplay.slice(-MAXIMUM_RESULT_DISPLAY_CHARACTERS);
+
+  const truncatedResultDisplay = React.useMemo(() => {
+    if (typeof resultDisplay === 'string') {
+      if (resultDisplay.length > MAXIMUM_RESULT_DISPLAY_CHARACTERS) {
+        return '...' + resultDisplay.slice(-MAXIMUM_RESULT_DISPLAY_CHARACTERS);
+      }
     }
-  }
+    return resultDisplay;
+  }, [resultDisplay]);
+
+  const renderedResult = React.useMemo(() => {
+    if (!truncatedResultDisplay) return null;
+
+    return (
+      <Box width="100%" flexDirection="column" paddingLeft={1}>
+        <Box flexDirection="column">
+          {typeof truncatedResultDisplay === 'string' &&
+          renderOutputAsMarkdown ? (
+            <Box flexDirection="column">
+              <MarkdownDisplay
+                text={truncatedResultDisplay}
+                terminalWidth={childWidth}
+                renderMarkdown={renderMarkdown}
+                isPending={false}
+              />
+            </Box>
+          ) : typeof truncatedResultDisplay === 'string' &&
+            !renderOutputAsMarkdown ? (
+            useAlternateBuffer ? (
+              <Box flexDirection="column" width={childWidth}>
+                <Text wrap="wrap" color={theme.text.primary}>
+                  {truncatedResultDisplay}
+                </Text>
+              </Box>
+            ) : (
+              <MaxSizedBox maxHeight={availableHeight} maxWidth={childWidth}>
+                <Box>
+                  <Text wrap="wrap" color={theme.text.primary}>
+                    {truncatedResultDisplay}
+                  </Text>
+                </Box>
+              </MaxSizedBox>
+            )
+          ) : typeof truncatedResultDisplay === 'object' &&
+            'fileDiff' in truncatedResultDisplay ? (
+            <DiffRenderer
+              diffContent={truncatedResultDisplay.fileDiff}
+              filename={truncatedResultDisplay.fileName}
+              availableTerminalHeight={availableHeight}
+              terminalWidth={childWidth}
+            />
+          ) : typeof truncatedResultDisplay === 'object' &&
+            'todos' in truncatedResultDisplay ? (
+            // display nothing, as the TodoTray will handle rendering todos
+            <></>
+          ) : (
+            <AnsiOutputText
+              data={truncatedResultDisplay as AnsiOutput}
+              availableTerminalHeight={availableHeight}
+              width={childWidth}
+            />
+          )}
+        </Box>
+      </Box>
+    );
+  }, [
+    truncatedResultDisplay,
+    renderOutputAsMarkdown,
+    childWidth,
+    renderMarkdown,
+    useAlternateBuffer,
+    availableHeight,
+  ]);
+
   // The outer box should not actually scroll unless something has gone very wrong.
   return (
     <Box
@@ -157,56 +224,7 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
         )}
         {emphasis === 'high' && <TrailingIndicator />}
       </Box>
-      {resultDisplay && (
-        <Box width="100%" flexDirection="column" paddingLeft={1}>
-          <Box flexDirection="column">
-            {typeof resultDisplay === 'string' && renderOutputAsMarkdown ? (
-              <Box flexDirection="column">
-                <MarkdownDisplay
-                  text={resultDisplay}
-                  terminalWidth={childWidth}
-                  renderMarkdown={renderMarkdown}
-                  isPending={false}
-                />
-              </Box>
-            ) : typeof resultDisplay === 'string' && !renderOutputAsMarkdown ? (
-              useAlternateBuffer ? (
-                <Box flexDirection="column" width={childWidth}>
-                  <Text wrap="wrap" color={theme.text.primary}>
-                    {resultDisplay}
-                  </Text>
-                </Box>
-              ) : (
-                <MaxSizedBox maxHeight={availableHeight} maxWidth={childWidth}>
-                  <Box>
-                    <Text wrap="wrap" color={theme.text.primary}>
-                      {resultDisplay}
-                    </Text>
-                  </Box>
-                </MaxSizedBox>
-              )
-            ) : typeof resultDisplay === 'object' &&
-              'fileDiff' in resultDisplay ? (
-              <DiffRenderer
-                diffContent={resultDisplay.fileDiff}
-                filename={resultDisplay.fileName}
-                availableTerminalHeight={availableHeight}
-                terminalWidth={childWidth}
-              />
-            ) : typeof resultDisplay === 'object' &&
-              'todos' in resultDisplay ? (
-              // display nothing, as the TodoTray will handle rendering todos
-              <></>
-            ) : (
-              <AnsiOutputText
-                data={resultDisplay as AnsiOutput}
-                availableTerminalHeight={availableHeight}
-                width={childWidth}
-              />
-            )}
-          </Box>
-        </Box>
-      )}
+      {renderedResult}
       {isThisShellFocused && config && (
         <Box paddingLeft={STATUS_INDICATOR_WIDTH} marginTop={1}>
           <ShellInputPrompt
