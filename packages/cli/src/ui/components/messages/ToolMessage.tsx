@@ -14,6 +14,7 @@ import { AnsiOutputText } from '../AnsiOutput.js';
 import { GeminiRespondingSpinner } from '../GeminiRespondingSpinner.js';
 import { MaxSizedBox } from '../shared/MaxSizedBox.js';
 import { ShellInputPrompt } from '../ShellInputPrompt.js';
+import { StickyHeader } from '../StickyHeader.js';
 import {
   SHELL_COMMAND_NAME,
   SHELL_NAME,
@@ -116,7 +117,7 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
   if (availableHeight && !useAlternateBuffer) {
     renderOutputAsMarkdown = false;
   }
-  const childWidth = terminalWidth - 2;
+  const childWidth = terminalWidth;
 
   const truncatedResultDisplay = React.useMemo(() => {
     if (typeof resultDisplay === 'string') {
@@ -131,7 +132,7 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
     if (!truncatedResultDisplay) return null;
 
     return (
-      <Box width="100%" flexDirection="column" paddingLeft={1}>
+      <Box width={terminalWidth} flexDirection="column" paddingLeft={1}>
         <Box flexDirection="column">
           {typeof truncatedResultDisplay === 'string' &&
           renderOutputAsMarkdown ? (
@@ -189,25 +190,12 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
     renderMarkdown,
     useAlternateBuffer,
     availableHeight,
+    terminalWidth,
   ]);
 
-  // The outer box should not actually scroll unless something has gone very wrong.
   return (
-    <Box
-      paddingY={0}
-      flexDirection="column"
-      overflow="scroll"
-      maxHeight={availableTerminalHeight}
-    >
-      <Box
-        minHeight={1}
-        borderStyle="round"
-        borderColor={theme.background.primary}
-        paddingX={1}
-        borderTop={false}
-        borderLeft={false}
-        borderRight={false}
-      >
+    <>
+      <StickyHeader>
         <ToolStatusIndicator status={status} name={name} />
         <ToolInfo
           name={name}
@@ -223,7 +211,7 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
           </Box>
         )}
         {emphasis === 'high' && <TrailingIndicator />}
-      </Box>
+      </StickyHeader>
       {renderedResult}
       {isThisShellFocused && config && (
         <Box paddingLeft={STATUS_INDICATOR_WIDTH} marginTop={1}>
@@ -233,7 +221,7 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
           />
         </Box>
       )}
-    </Box>
+    </>
   );
 };
 

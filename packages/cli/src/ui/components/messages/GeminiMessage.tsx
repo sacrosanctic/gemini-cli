@@ -10,6 +10,7 @@ import { MarkdownDisplay } from '../../utils/MarkdownDisplay.js';
 import { theme } from '../../semantic-colors.js';
 import { SCREEN_READER_MODEL_PREFIX } from '../../textConstants.js';
 import { useUIState } from '../../contexts/UIStateContext.js';
+import { useSettings } from '../../contexts/SettingsContext.js';
 
 interface GeminiMessageProps {
   text: string;
@@ -28,6 +29,9 @@ export const GeminiMessage: React.FC<GeminiMessageProps> = ({
   const prefix = '✦ ';
   const prefixWidth = prefix.length;
 
+  const settings = useSettings();
+  const useAlternateBuffer = settings.merged.ui?.useAlternateBuffer ?? false;
+
   return (
     <Box flexDirection="row">
       <Box width={prefixWidth}>
@@ -40,9 +44,11 @@ export const GeminiMessage: React.FC<GeminiMessageProps> = ({
         flexShrink={1}
         flexDirection="column"
         overflowX="hidden"
-        overflowY="scroll"
-        scrollbarThumbColor={theme.text.secondary}
-        scrollTop={Number.MAX_SAFE_INTEGER}
+        overflowY={useAlternateBuffer ? undefined : 'scroll'}
+        scrollbarThumbColor={
+          useAlternateBuffer ? undefined : theme.text.secondary
+        }
+        scrollTop={useAlternateBuffer ? undefined : Number.MAX_SAFE_INTEGER}
         maxHeight={availableTerminalHeight}
       >
         <Box flexShrink={0} flexDirection="column">

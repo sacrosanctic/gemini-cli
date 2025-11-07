@@ -8,6 +8,7 @@ import type React from 'react';
 import { Box } from 'ink';
 import { MarkdownDisplay } from '../../utils/MarkdownDisplay.js';
 import { useUIState } from '../../contexts/UIStateContext.js';
+import { useSettings } from '../../contexts/SettingsContext.js';
 
 interface GeminiMessageContentProps {
   text: string;
@@ -29,6 +30,8 @@ export const GeminiMessageContent: React.FC<GeminiMessageContentProps> = ({
   isPending,
 }) => {
   const { renderMarkdown } = useUIState();
+  const settings = useSettings();
+  const useAlternateBuffer = settings.merged.ui?.useAlternateBuffer ?? false;
   const originalPrefix = '✦ ';
   const prefixWidth = originalPrefix.length;
 
@@ -37,8 +40,8 @@ export const GeminiMessageContent: React.FC<GeminiMessageContentProps> = ({
       flexDirection="column"
       paddingLeft={prefixWidth}
       maxHeight={availableTerminalHeight}
-      overflow="scroll"
-      scrollTop={Number.MAX_SAFE_INTEGER}
+      overflow={useAlternateBuffer ? undefined : 'scroll'}
+      scrollTop={useAlternateBuffer ? undefined : Number.MAX_SAFE_INTEGER}
     >
       <Box flexShrink={0} flexDirection="column">
         <MarkdownDisplay

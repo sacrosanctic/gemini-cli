@@ -101,6 +101,8 @@ export const DiffRenderer: React.FC<DiffRendererProps> = ({
   theme,
 }) => {
   const settings = useSettings();
+  const useAlternateBuffer = settings?.merged.ui?.useAlternateBuffer ?? false;
+
   const screenReaderEnabled = useIsScreenReaderEnabled();
 
   const parsedLines = useMemo(() => {
@@ -176,7 +178,7 @@ export const DiffRenderer: React.FC<DiffRendererProps> = ({
         tabWidth,
         availableTerminalHeight,
         terminalWidth,
-        settings?.merged.ui?.useAlternateBuffer !== true,
+        !useAlternateBuffer,
       );
     }
   }, [
@@ -189,6 +191,7 @@ export const DiffRenderer: React.FC<DiffRendererProps> = ({
     terminalWidth,
     theme,
     settings,
+    useAlternateBuffer,
     tabWidth,
   ]);
 
@@ -279,10 +282,22 @@ const renderDiffContent = (
       ) {
         acc.push(
           <Box key={`gap-${index}`}>
-            {/* XXX switch back to a proper border. */}
-            <Text wrap="truncate" color={semanticTheme.text.secondary}>
-              {'═'.repeat(terminalWidth)}
-            </Text>
+            {useMaxSizedBox ? (
+              <Text wrap="truncate" color={semanticTheme.text.secondary}>
+                {'═'.repeat(terminalWidth)}
+              </Text>
+            ) : (
+              // We can use a proper separator when not using max sized box.
+              <Box
+                borderStyle="double"
+                borderLeft={false}
+                borderRight={false}
+                borderBottom={false}
+                width={terminalWidth}
+                borderColor={semanticTheme.text.secondary}
+                marginRight={1}
+              ></Box>
+            )}
           </Box>,
         );
       }
@@ -318,20 +333,32 @@ const renderDiffContent = (
 
       const displayContent = line.content.substring(baseIndentation);
 
+      const backgroundColor =
+        line.type === 'add'
+          ? semanticTheme.background.diff.added
+          : line.type === 'del'
+            ? semanticTheme.background.diff.removed
+            : undefined;
       acc.push(
         <Box key={lineKey} flexDirection="row">
-          <Text
-            color={semanticTheme.text.secondary}
-            backgroundColor={
-              line.type === 'add'
-                ? semanticTheme.background.diff.added
-                : line.type === 'del'
-                  ? semanticTheme.background.diff.removed
-                  : undefined
-            }
-          >
-            {gutterNumStr.padStart(gutterWidth)}{' '}
-          </Text>
+          {useMaxSizedBox ? (
+            <Text
+              color={semanticTheme.text.secondary}
+              backgroundColor={backgroundColor}
+            >
+              {gutterNumStr.padStart(gutterWidth)}{' '}
+            </Text>
+          ) : (
+            <Box
+              width={gutterWidth + 1}
+              paddingRight={1}
+              flexShrink={0}
+              backgroundColor={backgroundColor}
+              justifyContent="flex-end"
+            >
+              <Text color={semanticTheme.text.secondary}>{gutterNumStr}</Text>
+            </Box>
+          )}
           {line.type === 'context' ? (
             <>
               <Text>{prefixSymbol} </Text>
@@ -378,7 +405,7 @@ const renderDiffContent = (
   }
 
   return (
-    <Box key={key} flexDirection="column" width={terminalWidth}>
+    <Box key={key} flexDirection="column" width={terminalWidth} flexShrink={0}>
       {content}
     </Box>
   );
